@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.controller</a> &gt; <span class="el_source">PaymentController.java</span></div><h1>PaymentController.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.controller;
+
+import com.payment.orchestration.dto.PaymentRequest;
+import com.payment.orchestration.dto.PaymentResponse;
+import com.payment.orchestration.dto.PaymentStatusResponse;
+import com.payment.orchestration.exception.PaymentException;
+import com.payment.orchestration.service.PaymentOrchestrationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * REST Controller for payment operations.
+ * Provides endpoints for creating and fetching payments.
+ */
+<span class="fc" id="L26">@Slf4j</span>
+@RestController
+@RequestMapping(&quot;/api/v1/payments&quot;)
+<span class="fc" id="L29">@RequiredArgsConstructor</span>
+@Tag(name = &quot;Payments&quot;, description = &quot;Payment orchestration API endpoints&quot;)
+public class PaymentController {
+
+    private final PaymentOrchestrationService paymentOrchestrationService;
+
+    /**
+     * Create a new payment
+     * 
+     * @param idempotencyKey Unique key to ensure idempotent processing
+     * @param request Payment request details
+     * @return Created payment response
+     */
+    @PostMapping
+    @Operation(
+            summary = &quot;Create a new payment&quot;,
+            description = &quot;Creates a new payment request and processes it through the appropriate provider. &quot; +
+                    &quot;Requires an Idempotency-Key header to prevent duplicate processing.&quot;
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = &quot;201&quot;,
+                    description = &quot;Payment created successfully&quot;,
+                    content = @Content(schema = @Schema(implementation = PaymentResponse.class))
+            ),
+            @ApiResponse(responseCode = &quot;400&quot;, description = &quot;Invalid request&quot;),
+            @ApiResponse(responseCode = &quot;409&quot;, description = &quot;Idempotency conflict&quot;),
+            @ApiResponse(responseCode = &quot;500&quot;, description = &quot;Internal server error&quot;)
+    })
+    public ResponseEntity&lt;PaymentResponse&gt; createPayment(
+            @Parameter(description = &quot;Unique idempotency key for this request&quot;, required = true)
+            @RequestHeader(&quot;Idempotency-Key&quot;) String idempotencyKey,
+            @Valid @RequestBody PaymentRequest request) {
+
+<span class="fc" id="L63">        log.info(&quot;Received payment request with idempotency key: {}&quot;, idempotencyKey);</span>
+
+        // Validate idempotency key
+<span class="pc bpc" id="L66" title="2 of 4 branches missed.">        if (idempotencyKey == null || idempotencyKey.isBlank()) {</span>
+<span class="nc" id="L67">            throw new IllegalArgumentException(&quot;Idempotency-Key header is required&quot;);</span>
+        }
+
+        // Validate idempotency key format (should be UUID-like)
+<span class="pc bpc" id="L71" title="2 of 4 branches missed.">        if (idempotencyKey.length() &lt; 8 || idempotencyKey.length() &gt; 100) {</span>
+<span class="nc" id="L72">            throw new IllegalArgumentException(&quot;Idempotency-Key must be between 8 and 100 characters&quot;);</span>
+        }
+
+        // Validate payment method specific fields
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        if (!request.isValid()) {</span>
+<span class="fc" id="L77">            throw PaymentException.validation(request.getValidationError());</span>
+        }
+
+<span class="fc" id="L80">        PaymentResponse response = paymentOrchestrationService.createPayment(request, idempotencyKey);</span>
+
+<span class="pc bpc" id="L82" title="1 of 3 branches missed.">        HttpStatus status = switch (response.getStatus()) {</span>
+<span class="fc" id="L83">            case SUCCESS -&gt; HttpStatus.CREATED;</span>
+<span class="fc" id="L84">            case PROCESSING, PENDING, RETRY -&gt; HttpStatus.ACCEPTED;</span>
+<span class="pc" id="L85">            default -&gt; HttpStatus.OK;</span>
+        };
+
+<span class="fc" id="L88">        log.info(&quot;Payment {} created with status: {}&quot;, response.getPaymentId(), response.getStatus());</span>
+
+<span class="fc" id="L90">        return ResponseEntity.status(status).body(response);</span>
+    }
+
+    /**
+     * Get payment by ID
+     * 
+     * @param paymentId The unique payment identifier
+     * @return Payment details
+     */
+    @GetMapping(&quot;/{paymentId}&quot;)
+    @Operation(
+            summary = &quot;Get payment by ID&quot;,
+            description = &quot;Retrieves payment details by the payment ID&quot;
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = &quot;200&quot;,
+                    description = &quot;Payment found&quot;,
+                    content = @Content(schema = @Schema(implementation = PaymentResponse.class))
+            ),
+            @ApiResponse(responseCode = &quot;404&quot;, description = &quot;Payment not found&quot;)
+    })
+    public ResponseEntity&lt;PaymentResponse&gt; getPayment(
+            @Parameter(description = &quot;Payment ID&quot;, required = true)
+            @PathVariable String paymentId) {
+
+<span class="fc" id="L116">        log.debug(&quot;Fetching payment: {}&quot;, paymentId);</span>
+
+<span class="fc" id="L118">        PaymentResponse response = paymentOrchestrationService.getPayment(paymentId);</span>
+        
+<span class="fc" id="L120">        return ResponseEntity.ok(response);</span>
+    }
+
+    /**
+     * Get payment status with history
+     * 
+     * @param paymentId The unique payment identifier
+     * @return Payment status with full history
+     */
+    @GetMapping(&quot;/{paymentId}/status&quot;)
+    @Operation(
+            summary = &quot;Get payment status&quot;,
+            description = &quot;Retrieves the current status and complete status history of a payment&quot;
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = &quot;200&quot;,
+                    description = &quot;Status retrieved&quot;,
+                    content = @Content(schema = @Schema(implementation = PaymentStatusResponse.class))
+            ),
+            @ApiResponse(responseCode = &quot;404&quot;, description = &quot;Payment not found&quot;)
+    })
+    public ResponseEntity&lt;PaymentStatusResponse&gt; getPaymentStatus(
+            @Parameter(description = &quot;Payment ID&quot;, required = true)
+            @PathVariable String paymentId) {
+
+<span class="fc" id="L146">        log.debug(&quot;Fetching payment status: {}&quot;, paymentId);</span>
+
+<span class="fc" id="L148">        PaymentStatusResponse response = paymentOrchestrationService.getPaymentStatus(paymentId);</span>
+        
+<span class="fc" id="L150">        return ResponseEntity.ok(response);</span>
+    }
+
+    /**
+     * Health check endpoint
+     */
+    @GetMapping(&quot;/health&quot;)
+    @Operation(summary = &quot;Health check&quot;, description = &quot;Check if the payment service is healthy&quot;)
+    public ResponseEntity&lt;String&gt; healthCheck() {
+<span class="fc" id="L159">        return ResponseEntity.ok(&quot;OK&quot;);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

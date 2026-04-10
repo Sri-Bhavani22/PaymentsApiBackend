@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentProvider.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.provider</a> &gt; <span class="el_source">PaymentProvider.java</span></div><h1>PaymentProvider.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.provider;
+
+import com.payment.orchestration.entity.Payment;
+import com.payment.orchestration.enums.PaymentMethod;
+import com.payment.orchestration.enums.ProviderType;
+
+import java.util.Set;
+
+/**
+ * Interface for payment provider connectors.
+ * Each provider implementation handles communication with a specific payment gateway.
+ */
+public interface PaymentProvider {
+
+    /**
+     * Get the provider type identifier
+     */
+    ProviderType getProviderType();
+
+    /**
+     * Get the display name of the provider
+     */
+    String getProviderName();
+
+    /**
+     * Process a payment through this provider
+     * 
+     * @param payment The payment entity to process
+     * @return ProviderResponse containing the result
+     */
+    ProviderResponse processPayment(Payment payment);
+
+    /**
+     * Check the status of a payment with the provider
+     * 
+     * @param providerReference The provider's reference ID
+     * @return ProviderResponse with current status
+     */
+    ProviderResponse checkPaymentStatus(String providerReference);
+
+    /**
+     * Refund a payment
+     * 
+     * @param payment The payment to refund
+     * @return ProviderResponse with refund result
+     */
+    ProviderResponse refundPayment(Payment payment);
+
+    /**
+     * Get the payment methods supported by this provider
+     */
+    Set&lt;PaymentMethod&gt; getSupportedPaymentMethods();
+
+    /**
+     * Check if this provider supports a specific payment method
+     */
+    default boolean supportsPaymentMethod(PaymentMethod method) {
+<span class="nc" id="L58">        return getSupportedPaymentMethods().contains(method);</span>
+    }
+
+    /**
+     * Check if the provider is currently healthy/available
+     */
+    boolean isHealthy();
+
+    /**
+     * Get the provider's configured timeout in milliseconds
+     */
+    long getTimeoutMs();
+
+    /**
+     * Get success rate of this provider (for routing decisions)
+     */
+    default double getSuccessRate() {
+<span class="nc" id="L75">        return 1.0; // Default to 100% if not tracked</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

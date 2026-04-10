@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentOrchestrationService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.service</a> &gt; <span class="el_source">PaymentOrchestrationService.java</span></div><h1>PaymentOrchestrationService.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.service;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.payment.orchestration.dto.PaymentRequest;
+import com.payment.orchestration.dto.PaymentResponse;
+import com.payment.orchestration.dto.PaymentStatusResponse;
+import com.payment.orchestration.entity.IdempotencyRecord;
+import com.payment.orchestration.entity.Payment;
+import com.payment.orchestration.enums.PaymentStatus;
+import com.payment.orchestration.enums.ProviderType;
+import com.payment.orchestration.exception.IdempotencyException;
+import com.payment.orchestration.exception.PaymentException;
+import com.payment.orchestration.provider.PaymentProvider;
+import com.payment.orchestration.provider.ProviderResponse;
+import com.payment.orchestration.repository.PaymentRepository;
+import com.payment.orchestration.routing.RoutingEngine;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Main orchestration service for payment processing.
+ * Coordinates between routing, providers, idempotency, and status tracking.
+ * 
+ * Handles:
+ * - Payment creation with idempotency
+ * - Routing to appropriate provider
+ * - Retry with failover
+ * - Status tracking
+ */
+<span class="fc" id="L38">@Slf4j</span>
+@Service
+<span class="fc" id="L40">@RequiredArgsConstructor</span>
+public class PaymentOrchestrationService {
+
+    private final PaymentRepository paymentRepository;
+    private final RoutingEngine routingEngine;
+    private final IdempotencyService idempotencyService;
+    private final PaymentStatusTrackingService statusTrackingService;
+    private final ObjectMapper objectMapper;
+
+    @Value(&quot;${payment.retry.max-attempts:3}&quot;)
+    private int maxRetryAttempts;
+
+    @Value(&quot;${payment.retry.initial-delay-ms:1000}&quot;)
+    private long initialDelayMs;
+
+    @Value(&quot;${payment.retry.multiplier:2.0}&quot;)
+    private double backoffMultiplier;
+
+    @Value(&quot;${payment.retry.max-delay-ms:10000}&quot;)
+    private long maxDelayMs;
+
+    /**
+     * Create and process a new payment
+     * 
+     * @param request The payment request
+     * @param idempotencyKey Unique idempotency key
+     * @return Payment response
+     */
+    @Transactional
+    public PaymentResponse createPayment(PaymentRequest request, String idempotencyKey) {
+<span class="fc" id="L70">        log.info(&quot;Creating payment with idempotency key: {}&quot;, idempotencyKey);</span>
+
+        // Generate request hash for idempotency verification
+<span class="fc" id="L73">        String requestHash = generateRequestHash(request);</span>
+
+        // Check idempotency - return existing response if found
+<span class="fc" id="L76">        Optional&lt;IdempotencyRecord&gt; existingRecord = idempotencyService.checkIdempotencyKey(idempotencyKey);</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (existingRecord.isPresent()) {</span>
+<span class="fc" id="L78">            return handleExistingIdempotencyRecord(existingRecord.get(), requestHash, idempotencyKey);</span>
+        }
+
+        // Create new idempotency record
+<span class="fc" id="L82">        idempotencyService.createIdempotencyRecord(idempotencyKey, requestHash);</span>
+
+        try {
+            // Create payment entity
+<span class="fc" id="L86">            Payment payment = createPaymentEntity(request, idempotencyKey);</span>
+<span class="fc" id="L87">            payment = paymentRepository.save(payment);</span>
+
+<span class="fc" id="L89">            log.info(&quot;Created payment: {}&quot;, payment.getPaymentId());</span>
+
+            // Process payment with routing and retry
+<span class="fc" id="L92">            PaymentResponse response = processPaymentWithRetry(payment);</span>
+
+            // Store response in idempotency record
+<span class="fc" id="L95">            String responseJson = serializeResponse(response);</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">            int statusCode = response.getStatus() == PaymentStatus.SUCCESS ? 201 : 200;</span>
+<span class="fc" id="L97">            idempotencyService.completeIdempotencyRecord(</span>
+<span class="fc" id="L98">                    idempotencyKey, payment.getPaymentId(), statusCode, responseJson);</span>
+
+<span class="fc" id="L100">            return response;</span>
+
+<span class="nc" id="L102">        } catch (Exception e) {</span>
+<span class="nc" id="L103">            log.error(&quot;Payment processing failed for idempotency key: {}&quot;, idempotencyKey, e);</span>
+<span class="nc" id="L104">            idempotencyService.failIdempotencyRecord(idempotencyKey);</span>
+<span class="nc" id="L105">            throw e;</span>
+        }
+    }
+
+    /**
+     * Get payment by ID
+     * 
+     * @param paymentId The payment ID
+     * @return Payment response
+     */
+    public PaymentResponse getPayment(String paymentId) {
+<span class="fc" id="L116">        log.debug(&quot;Fetching payment: {}&quot;, paymentId);</span>
+
+<span class="fc" id="L118">        Payment payment = paymentRepository.findByPaymentId(paymentId)</span>
+<span class="fc" id="L119">                .orElseThrow(() -&gt; new PaymentException(&quot;PAY_002&quot;, &quot;Payment not found: &quot; + paymentId));</span>
+
+<span class="fc" id="L121">        return PaymentResponse.fromEntity(payment);</span>
+    }
+
+    /**
+     * Get payment status with history
+     * 
+     * @param paymentId The payment ID
+     * @return Payment status response
+     */
+    public PaymentStatusResponse getPaymentStatus(String paymentId) {
+<span class="fc" id="L131">        log.debug(&quot;Fetching payment status: {}&quot;, paymentId);</span>
+
+<span class="fc" id="L133">        return statusTrackingService.getPaymentStatus(paymentId)</span>
+<span class="pc" id="L134">                .orElseThrow(() -&gt; new PaymentException(&quot;PAY_002&quot;, &quot;Payment not found: &quot; + paymentId));</span>
+    }
+
+    /**
+     * Process payment with retry and failover logic
+     */
+    private PaymentResponse processPaymentWithRetry(Payment payment) {
+<span class="fc" id="L141">        List&lt;ProviderType&gt; triedProviders = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L142">        int attemptNumber = 0;</span>
+<span class="fc" id="L143">        long currentDelay = initialDelayMs;</span>
+
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">        while (attemptNumber &lt;= maxRetryAttempts) {</span>
+<span class="fc" id="L146">            attemptNumber++;</span>
+
+            // Get provider (primary or failover)
+            PaymentProvider provider;
+<span class="fc bfc" id="L150" title="All 2 branches covered.">            if (triedProviders.isEmpty()) {</span>
+<span class="fc" id="L151">                provider = routingEngine.getPrimaryProvider(payment.getPaymentMethod());</span>
+            } else {
+<span class="fc" id="L153">                Optional&lt;PaymentProvider&gt; nextProvider = routingEngine.getNextAvailableProvider(</span>
+<span class="fc" id="L154">                        payment.getPaymentMethod(), triedProviders);</span>
+                
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">                if (nextProvider.isEmpty()) {</span>
+<span class="nc" id="L157">                    log.warn(&quot;No more providers available for payment: {}&quot;, payment.getPaymentId());</span>
+<span class="nc" id="L158">                    break;</span>
+                }
+<span class="fc" id="L160">                provider = nextProvider.get();</span>
+            }
+
+<span class="fc" id="L163">            log.info(&quot;Attempt {} for payment {} using provider {}&quot;,</span>
+<span class="fc" id="L164">                    attemptNumber, payment.getPaymentId(), provider.getProviderType());</span>
+
+            // Record processing started
+<span class="fc" id="L167">            statusTrackingService.recordProcessingStarted(payment, provider.getProviderType());</span>
+
+            // Process with provider
+<span class="fc" id="L170">            ProviderResponse providerResponse = provider.processPayment(payment);</span>
+
+<span class="fc bfc" id="L172" title="All 2 branches covered.">            if (providerResponse.isSuccess()) {</span>
+                // Success!
+<span class="fc" id="L174">                statusTrackingService.recordSuccess(</span>
+                        payment,
+<span class="fc" id="L176">                        providerResponse.getProviderReference(),</span>
+<span class="fc" id="L177">                        providerResponse.getResponseCode()</span>
+                );
+
+<span class="fc" id="L180">                log.info(&quot;Payment {} succeeded with provider {}&quot;,</span>
+<span class="fc" id="L181">                        payment.getPaymentId(), provider.getProviderType());</span>
+
+<span class="fc" id="L183">                return PaymentResponse.success(paymentRepository.save(payment), </span>
+                        &quot;Payment processed successfully&quot;);
+            }
+
+            // Handle failure
+<span class="fc" id="L188">            triedProviders.add(provider.getProviderType());</span>
+<span class="fc" id="L189">            log.warn(&quot;Payment {} failed with provider {}: {} - {}&quot;,</span>
+<span class="fc" id="L190">                    payment.getPaymentId(),</span>
+<span class="fc" id="L191">                    provider.getProviderType(),</span>
+<span class="fc" id="L192">                    providerResponse.getResponseCode(),</span>
+<span class="fc" id="L193">                    providerResponse.getResponseMessage());</span>
+
+<span class="pc bpc" id="L195" title="1 of 2 branches missed.">            if (!providerResponse.isRetryable()) {</span>
+                // Non-retryable failure
+<span class="nc" id="L197">                statusTrackingService.recordFailure(</span>
+                        payment,
+<span class="nc" id="L199">                        providerResponse.getResponseCode(),</span>
+<span class="nc" id="L200">                        providerResponse.getResponseMessage()</span>
+                );
+
+<span class="nc" id="L203">                log.error(&quot;Payment {} failed permanently: {}&quot;,</span>
+<span class="nc" id="L204">                        payment.getPaymentId(), providerResponse.getResponseMessage());</span>
+
+<span class="nc" id="L206">                return PaymentResponse.failed(paymentRepository.save(payment));</span>
+            }
+
+            // Retryable failure - record and continue
+<span class="pc bpc" id="L210" title="1 of 2 branches missed.">            if (payment.canRetry()) {</span>
+<span class="fc" id="L211">                payment.incrementRetryCount();</span>
+<span class="fc" id="L212">                statusTrackingService.recordRetryAttempt(</span>
+                        payment,
+<span class="fc" id="L214">                        payment.getRetryCount(),</span>
+<span class="fc" id="L215">                        providerResponse.getResponseMessage()</span>
+                );
+
+                // Apply backoff delay
+<span class="fc" id="L219">                applyBackoffDelay(currentDelay);</span>
+<span class="fc" id="L220">                currentDelay = Math.min((long) (currentDelay * backoffMultiplier), maxDelayMs);</span>
+            } else {
+                break;
+            }
+<span class="fc" id="L224">        }</span>
+
+        // All retries exhausted
+<span class="nc" id="L227">        statusTrackingService.recordFailure(</span>
+                payment,
+                &quot;MAX_RETRIES_EXCEEDED&quot;,
+                &quot;Payment failed after &quot; + maxRetryAttempts + &quot; retry attempts&quot;
+        );
+
+<span class="nc" id="L233">        log.error(&quot;Payment {} failed after exhausting all retries&quot;, payment.getPaymentId());</span>
+<span class="nc" id="L234">        return PaymentResponse.failed(paymentRepository.save(payment));</span>
+    }
+
+    /**
+     * Handle existing idempotency record
+     */
+    private PaymentResponse handleExistingIdempotencyRecord(
+            IdempotencyRecord record, String currentRequestHash, String idempotencyKey) {
+        
+        // Verify request matches
+<span class="fc bfc" id="L244" title="All 2 branches covered.">        if (!idempotencyService.verifyRequestMatch(record, currentRequestHash)) {</span>
+<span class="fc" id="L245">            log.warn(&quot;Idempotency conflict: different request with same key: {}&quot;, idempotencyKey);</span>
+<span class="fc" id="L246">            throw new IdempotencyException(</span>
+                    &quot;Idempotency key conflict: a different request was already processed with this key&quot;
+            );
+        }
+
+        // If still processing, return processing status
+<span class="pc bpc" id="L252" title="1 of 2 branches missed.">        if (record.isProcessing()) {</span>
+<span class="nc" id="L253">            log.info(&quot;Request still processing for idempotency key: {}&quot;, idempotencyKey);</span>
+            
+            // Try to find the associated payment
+<span class="nc bnc" id="L256" title="All 2 branches missed.">            if (record.getPaymentId() != null) {</span>
+<span class="nc" id="L257">                return paymentRepository.findByPaymentId(record.getPaymentId())</span>
+<span class="nc" id="L258">                        .map(PaymentResponse::processing)</span>
+<span class="nc" id="L259">                        .orElse(PaymentResponse.builder()</span>
+<span class="nc" id="L260">                                .status(PaymentStatus.PROCESSING)</span>
+<span class="nc" id="L261">                                .message(&quot;Payment is being processed&quot;)</span>
+<span class="nc" id="L262">                                .build());</span>
+            }
+            
+<span class="nc" id="L265">            return PaymentResponse.builder()</span>
+<span class="nc" id="L266">                    .status(PaymentStatus.PROCESSING)</span>
+<span class="nc" id="L267">                    .message(&quot;Payment is being processed&quot;)</span>
+<span class="nc" id="L268">                    .build();</span>
+        }
+
+        // Return cached response
+<span class="pc bpc" id="L272" title="2 of 4 branches missed.">        if (record.isCompleted() &amp;&amp; record.getResponseBody() != null) {</span>
+<span class="fc" id="L273">            log.info(&quot;Returning cached response for idempotency key: {}&quot;, idempotencyKey);</span>
+<span class="fc" id="L274">            return deserializeResponse(record.getResponseBody());</span>
+        }
+
+        // Fallback: fetch the payment
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        if (record.getPaymentId() != null) {</span>
+<span class="nc" id="L279">            return getPayment(record.getPaymentId());</span>
+        }
+
+<span class="nc" id="L282">        throw new PaymentException(&quot;PAY_005&quot;, &quot;Unable to retrieve payment for idempotency key&quot;);</span>
+    }
+
+    /**
+     * Create payment entity from request
+     */
+    private Payment createPaymentEntity(PaymentRequest request, String idempotencyKey) {
+<span class="fc" id="L289">        return Payment.builder()</span>
+<span class="fc" id="L290">                .idempotencyKey(idempotencyKey)</span>
+<span class="fc" id="L291">                .amount(request.getAmount())</span>
+<span class="fc" id="L292">                .currency(request.getCurrency().toUpperCase())</span>
+<span class="fc" id="L293">                .paymentMethod(request.getPaymentMethod())</span>
+<span class="fc" id="L294">                .status(PaymentStatus.PENDING)</span>
+<span class="fc bfc" id="L295" title="All 2 branches covered.">                .maskedCardNumber(request.getCardNumber() != null ? </span>
+<span class="fc" id="L296">                        Payment.maskCardNumber(request.getCardNumber()) : null)</span>
+<span class="fc" id="L297">                .upiId(request.getUpiId())</span>
+<span class="fc" id="L298">                .customerEmail(request.getCustomerEmail())</span>
+<span class="fc" id="L299">                .customerPhone(request.getCustomerPhone())</span>
+<span class="fc" id="L300">                .description(request.getDescription())</span>
+<span class="fc" id="L301">                .metadata(request.getMetadata())</span>
+<span class="fc" id="L302">                .retryCount(0)</span>
+<span class="fc" id="L303">                .maxRetries(maxRetryAttempts)</span>
+<span class="fc" id="L304">                .build();</span>
+    }
+
+    /**
+     * Generate hash for request
+     */
+    private String generateRequestHash(PaymentRequest request) {
+        try {
+<span class="fc" id="L312">            String json = objectMapper.writeValueAsString(request);</span>
+<span class="fc" id="L313">            return idempotencyService.generateRequestHash(json);</span>
+<span class="nc" id="L314">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L315">            log.warn(&quot;Failed to serialize request for hashing&quot;, e);</span>
+<span class="nc" id="L316">            return String.valueOf(request.hashCode());</span>
+        }
+    }
+
+    /**
+     * Serialize response to JSON
+     */
+    private String serializeResponse(PaymentResponse response) {
+        try {
+<span class="fc" id="L325">            return objectMapper.writeValueAsString(response);</span>
+<span class="nc" id="L326">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L327">            log.error(&quot;Failed to serialize response&quot;, e);</span>
+<span class="nc" id="L328">            return null;</span>
+        }
+    }
+
+    /**
+     * Deserialize response from JSON
+     */
+    private PaymentResponse deserializeResponse(String json) {
+        try {
+<span class="fc" id="L337">            return objectMapper.readValue(json, PaymentResponse.class);</span>
+<span class="nc" id="L338">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L339">            log.error(&quot;Failed to deserialize response&quot;, e);</span>
+<span class="nc" id="L340">            throw new PaymentException(&quot;PAY_005&quot;, &quot;Failed to retrieve cached response&quot;);</span>
+        }
+    }
+
+    /**
+     * Apply backoff delay between retries
+     */
+    private void applyBackoffDelay(long delayMs) {
+        try {
+<span class="fc" id="L349">            log.debug(&quot;Applying backoff delay: {}ms&quot;, delayMs);</span>
+<span class="fc" id="L350">            Thread.sleep(delayMs);</span>
+<span class="nc" id="L351">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L352">            Thread.currentThread().interrupt();</span>
+<span class="nc" id="L353">            log.warn(&quot;Backoff delay interrupted&quot;);</span>
+<span class="fc" id="L354">        }</span>
+<span class="fc" id="L355">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

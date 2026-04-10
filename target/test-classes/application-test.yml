@@ -1,0 +1,59 @@
+spring:
+  application:
+    name: payment-orchestration-test
+  
+  # Test Database Configuration
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        dialect: org.hibernate.dialect.H2Dialect
+  
+  # Disable H2 Console in tests
+  h2:
+    console:
+      enabled: false
+
+  # Cache Configuration
+  cache:
+    type: caffeine
+
+# Server Configuration
+server:
+  port: 0  # Random port for tests
+
+# Application Configuration - Faster retries for tests
+payment:
+  retry:
+    max-attempts: 2
+    initial-delay-ms: 100
+    max-delay-ms: 500
+    multiplier: 2.0
+  
+  idempotency:
+    ttl-hours: 1
+  
+  providers:
+    provider-a:
+      timeout-ms: 1000
+      enabled: true
+    provider-b:
+      timeout-ms: 1000
+      enabled: true
+
+# Logging - Minimal for tests
+logging:
+  level:
+    root: WARN
+    com.payment.orchestration: INFO
+    org.springframework.test: WARN

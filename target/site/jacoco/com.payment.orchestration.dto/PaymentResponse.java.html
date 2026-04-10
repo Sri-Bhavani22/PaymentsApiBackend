@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.dto</a> &gt; <span class="el_source">PaymentResponse.java</span></div><h1>PaymentResponse.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.payment.orchestration.entity.Payment;
+import com.payment.orchestration.enums.PaymentMethod;
+import com.payment.orchestration.enums.PaymentStatus;
+import com.payment.orchestration.enums.ProviderType;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * Response DTO for payment operations.
+ * Contains payment details to be returned to the client.
+ */
+<span class="pc bnc" id="L17" title="All 142 branches missed.">@Data</span>
+<span class="fc" id="L18">@NoArgsConstructor</span>
+<span class="fc" id="L19">@AllArgsConstructor</span>
+<span class="pc" id="L20">@Builder</span>
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class PaymentResponse {
+
+    /**
+     * Unique payment identifier
+     */
+<span class="fc" id="L27">    private String paymentId;</span>
+
+    /**
+     * Current payment status
+     */
+<span class="fc" id="L32">    private PaymentStatus status;</span>
+
+    /**
+     * Status description
+     */
+<span class="fc" id="L37">    private String statusDescription;</span>
+
+    /**
+     * Payment amount
+     */
+<span class="fc" id="L42">    private BigDecimal amount;</span>
+
+    /**
+     * Currency code
+     */
+<span class="fc" id="L47">    private String currency;</span>
+
+    /**
+     * Payment method used
+     */
+<span class="fc" id="L52">    private PaymentMethod paymentMethod;</span>
+
+    /**
+     * Provider handling the payment
+     */
+<span class="fc" id="L57">    private ProviderType provider;</span>
+
+    /**
+     * Reference from the payment provider
+     */
+<span class="fc" id="L62">    private String providerReference;</span>
+
+    /**
+     * Masked card number (for card payments)
+     */
+<span class="fc" id="L67">    private String maskedCardNumber;</span>
+
+    /**
+     * UPI ID (for UPI payments)
+     */
+<span class="fc" id="L72">    private String upiId;</span>
+
+    /**
+     * Number of retry attempts
+     */
+<span class="fc" id="L77">    private Integer retryCount;</span>
+
+    /**
+     * Error code if payment failed
+     */
+<span class="fc" id="L82">    private String errorCode;</span>
+
+    /**
+     * Error message if payment failed
+     */
+<span class="fc" id="L87">    private String errorMessage;</span>
+
+    /**
+     * When payment was created
+     */
+<span class="fc" id="L92">    private LocalDateTime createdAt;</span>
+
+    /**
+     * When payment was last updated
+     */
+<span class="fc" id="L97">    private LocalDateTime updatedAt;</span>
+
+    /**
+     * When payment was completed
+     */
+<span class="fc" id="L102">    private LocalDateTime completedAt;</span>
+
+    /**
+     * Message for the client
+     */
+<span class="fc" id="L107">    private String message;</span>
+
+    /**
+     * Create response from Payment entity
+     */
+    public static PaymentResponse fromEntity(Payment payment) {
+<span class="fc" id="L113">        return PaymentResponse.builder()</span>
+<span class="fc" id="L114">                .paymentId(payment.getPaymentId())</span>
+<span class="fc" id="L115">                .status(payment.getStatus())</span>
+<span class="fc" id="L116">                .statusDescription(payment.getStatus().getDescription())</span>
+<span class="fc" id="L117">                .amount(payment.getAmount())</span>
+<span class="fc" id="L118">                .currency(payment.getCurrency())</span>
+<span class="fc" id="L119">                .paymentMethod(payment.getPaymentMethod())</span>
+<span class="fc" id="L120">                .provider(payment.getProvider())</span>
+<span class="fc" id="L121">                .providerReference(payment.getProviderReference())</span>
+<span class="fc" id="L122">                .maskedCardNumber(payment.getMaskedCardNumber())</span>
+<span class="fc" id="L123">                .upiId(payment.getUpiId())</span>
+<span class="fc" id="L124">                .retryCount(payment.getRetryCount())</span>
+<span class="fc" id="L125">                .errorCode(payment.getErrorCode())</span>
+<span class="fc" id="L126">                .errorMessage(payment.getErrorMessage())</span>
+<span class="fc" id="L127">                .createdAt(payment.getCreatedAt())</span>
+<span class="fc" id="L128">                .updatedAt(payment.getUpdatedAt())</span>
+<span class="fc" id="L129">                .completedAt(payment.getCompletedAt())</span>
+<span class="fc" id="L130">                .build();</span>
+    }
+
+    /**
+     * Create a simple success response
+     */
+    public static PaymentResponse success(Payment payment, String message) {
+<span class="fc" id="L137">        PaymentResponse response = fromEntity(payment);</span>
+<span class="fc" id="L138">        response.setMessage(message);</span>
+<span class="fc" id="L139">        return response;</span>
+    }
+
+    /**
+     * Create a processing response
+     */
+    public static PaymentResponse processing(Payment payment) {
+<span class="nc" id="L146">        PaymentResponse response = fromEntity(payment);</span>
+<span class="nc" id="L147">        response.setMessage(&quot;Payment is being processed&quot;);</span>
+<span class="nc" id="L148">        return response;</span>
+    }
+
+    /**
+     * Create a failed response
+     */
+    public static PaymentResponse failed(Payment payment) {
+<span class="nc" id="L155">        PaymentResponse response = fromEntity(payment);</span>
+<span class="nc" id="L156">        response.setMessage(&quot;Payment failed: &quot; + payment.getErrorMessage());</span>
+<span class="nc" id="L157">        return response;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

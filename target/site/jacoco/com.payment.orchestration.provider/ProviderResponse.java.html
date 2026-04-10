@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.provider</a> &gt; <span class="el_source">ProviderResponse.java</span></div><h1>ProviderResponse.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.provider;
+
+import com.payment.orchestration.enums.ProviderType;
+import lombok.*;
+
+import java.time.LocalDateTime;
+
+/**
+ * Response from a payment provider.
+ * Contains all information about the payment processing result.
+ */
+<span class="pc bpc" id="L12" title="46 of 78 branches missed.">@Data</span>
+<span class="fc" id="L13">@NoArgsConstructor</span>
+<span class="fc" id="L14">@AllArgsConstructor</span>
+<span class="pc bfc" id="L15" title="All 2 branches covered.">@Builder</span>
+public class ProviderResponse {
+
+    /**
+     * Whether the payment was successful
+     */
+<span class="fc" id="L21">    private boolean success;</span>
+
+    /**
+     * Provider type that processed the payment
+     */
+<span class="fc" id="L26">    private ProviderType providerType;</span>
+
+    /**
+     * Provider's reference ID for this transaction
+     */
+<span class="fc" id="L31">    private String providerReference;</span>
+
+    /**
+     * Response code from the provider
+     */
+<span class="fc" id="L36">    private String responseCode;</span>
+
+    /**
+     * Response message from the provider
+     */
+<span class="fc" id="L41">    private String responseMessage;</span>
+
+    /**
+     * Whether this error is retryable
+     */
+<span class="fc" id="L46">    private boolean retryable;</span>
+
+    /**
+     * Suggested wait time before retry (in milliseconds)
+     */
+<span class="fc" id="L51">    private Long retryAfterMs;</span>
+
+    /**
+     * Processing time for the transaction (in milliseconds)
+     */
+<span class="fc" id="L56">    private Long processingTimeMs;</span>
+
+    /**
+     * Timestamp of the response
+     */
+    @Builder.Default
+<span class="fc" id="L62">    private LocalDateTime timestamp = LocalDateTime.now();</span>
+
+    /**
+     * Additional provider-specific data
+     */
+<span class="fc" id="L67">    private String additionalData;</span>
+
+    /**
+     * Create a successful response
+     */
+    public static ProviderResponse success(ProviderType providerType, String reference, String message) {
+<span class="fc" id="L73">        return ProviderResponse.builder()</span>
+<span class="fc" id="L74">                .success(true)</span>
+<span class="fc" id="L75">                .providerType(providerType)</span>
+<span class="fc" id="L76">                .providerReference(reference)</span>
+<span class="fc" id="L77">                .responseCode(&quot;00&quot;)</span>
+<span class="fc" id="L78">                .responseMessage(message)</span>
+<span class="fc" id="L79">                .retryable(false)</span>
+<span class="fc" id="L80">                .build();</span>
+    }
+
+    /**
+     * Create a failed response (non-retryable)
+     */
+    public static ProviderResponse failure(ProviderType providerType, String code, String message) {
+<span class="fc" id="L87">        return ProviderResponse.builder()</span>
+<span class="fc" id="L88">                .success(false)</span>
+<span class="fc" id="L89">                .providerType(providerType)</span>
+<span class="fc" id="L90">                .responseCode(code)</span>
+<span class="fc" id="L91">                .responseMessage(message)</span>
+<span class="fc" id="L92">                .retryable(false)</span>
+<span class="fc" id="L93">                .build();</span>
+    }
+
+    /**
+     * Create a retryable failure response
+     */
+    public static ProviderResponse retryableFailure(ProviderType providerType, String code, String message, long retryAfterMs) {
+<span class="fc" id="L100">        return ProviderResponse.builder()</span>
+<span class="fc" id="L101">                .success(false)</span>
+<span class="fc" id="L102">                .providerType(providerType)</span>
+<span class="fc" id="L103">                .responseCode(code)</span>
+<span class="fc" id="L104">                .responseMessage(message)</span>
+<span class="fc" id="L105">                .retryable(true)</span>
+<span class="fc" id="L106">                .retryAfterMs(retryAfterMs)</span>
+<span class="fc" id="L107">                .build();</span>
+    }
+
+    /**
+     * Create a timeout response
+     */
+    public static ProviderResponse timeout(ProviderType providerType) {
+<span class="nc" id="L114">        return ProviderResponse.builder()</span>
+<span class="nc" id="L115">                .success(false)</span>
+<span class="nc" id="L116">                .providerType(providerType)</span>
+<span class="nc" id="L117">                .responseCode(&quot;TIMEOUT&quot;)</span>
+<span class="nc" id="L118">                .responseMessage(&quot;Provider connection timeout&quot;)</span>
+<span class="nc" id="L119">                .retryable(true)</span>
+<span class="nc" id="L120">                .retryAfterMs(2000L)</span>
+<span class="nc" id="L121">                .build();</span>
+    }
+
+    /**
+     * Create a provider unavailable response
+     */
+    public static ProviderResponse unavailable(ProviderType providerType) {
+<span class="fc" id="L128">        return ProviderResponse.builder()</span>
+<span class="fc" id="L129">                .success(false)</span>
+<span class="fc" id="L130">                .providerType(providerType)</span>
+<span class="fc" id="L131">                .responseCode(&quot;503&quot;)</span>
+<span class="fc" id="L132">                .responseMessage(&quot;Provider service unavailable&quot;)</span>
+<span class="fc" id="L133">                .retryable(true)</span>
+<span class="fc" id="L134">                .retryAfterMs(5000L)</span>
+<span class="fc" id="L135">                .build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

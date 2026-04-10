@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentStatusHistory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.entity</a> &gt; <span class="el_source">PaymentStatusHistory.java</span></div><h1>PaymentStatusHistory.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.entity;
+
+import com.payment.orchestration.enums.PaymentStatus;
+import com.payment.orchestration.enums.ProviderType;
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.LocalDateTime;
+
+/**
+ * Entity to track payment status changes over time.
+ * Provides an audit trail of all status transitions.
+ */
+@Entity
+@Table(name = &quot;payment_status_history&quot;, indexes = {
+    @Index(name = &quot;idx_payment_history&quot;, columnList = &quot;payment_id&quot;),
+    @Index(name = &quot;idx_history_timestamp&quot;, columnList = &quot;timestamp&quot;)
+})
+@Getter
+<span class="nc" id="L21">@Setter</span>
+<span class="fc" id="L22">@NoArgsConstructor</span>
+<span class="fc" id="L23">@AllArgsConstructor</span>
+<span class="pc" id="L24">@Builder</span>
+public class PaymentStatusHistory {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+<span class="nc" id="L29">    private Long id;</span>
+
+    /**
+     * Reference to the parent payment
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = &quot;payment_id&quot;, nullable = false)
+<span class="nc" id="L36">    private Payment payment;</span>
+
+    /**
+     * Status at this point in time
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+<span class="fc" id="L43">    private PaymentStatus status;</span>
+
+    /**
+     * Provider handling the payment at this status
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+<span class="fc" id="L50">    private ProviderType provider;</span>
+
+    /**
+     * Optional message describing the status change
+     */
+    @Column(length = 500)
+<span class="fc" id="L56">    private String message;</span>
+
+    /**
+     * Response code from provider (if applicable)
+     */
+    @Column(length = 50)
+<span class="fc" id="L62">    private String responseCode;</span>
+
+    /**
+     * Retry attempt number (if this is a retry)
+     */
+<span class="fc" id="L67">    private Integer retryAttempt;</span>
+
+    /**
+     * Timestamp of this status change
+     */
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+<span class="fc" id="L74">    private LocalDateTime timestamp;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

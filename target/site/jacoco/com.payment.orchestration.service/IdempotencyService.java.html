@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IdempotencyService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.service</a> &gt; <span class="el_source">IdempotencyService.java</span></div><h1>IdempotencyService.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.service;
+
+import com.payment.orchestration.entity.IdempotencyRecord;
+import com.payment.orchestration.repository.IdempotencyRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.Optional;
+
+/**
+ * Service for managing idempotency of payment requests.
+ * Ensures that duplicate requests with the same idempotency key return the same response.
+ */
+<span class="fc" id="L24">@Slf4j</span>
+@Service
+<span class="fc" id="L26">@RequiredArgsConstructor</span>
+public class IdempotencyService {
+
+    private final IdempotencyRepository idempotencyRepository;
+
+    // TTL for idempotency records (24 hours)
+    private static final int TTL_HOURS = 24;
+
+    /**
+     * Check if an idempotency key exists and return the existing record
+     * 
+     * @param idempotencyKey The idempotency key to check
+     * @return Optional containing the existing record if found
+     */
+    @Cacheable(value = &quot;idempotency&quot;, key = &quot;#idempotencyKey&quot;, unless = &quot;#result == null&quot;)
+    public Optional&lt;IdempotencyRecord&gt; checkIdempotencyKey(String idempotencyKey) {
+<span class="fc" id="L42">        log.debug(&quot;Checking idempotency key: {}&quot;, idempotencyKey);</span>
+        
+<span class="fc" id="L44">        Optional&lt;IdempotencyRecord&gt; record = idempotencyRepository.findByIdempotencyKey(idempotencyKey);</span>
+        
+<span class="fc bfc" id="L46" title="All 2 branches covered.">        if (record.isPresent()) {</span>
+<span class="fc" id="L47">            IdempotencyRecord existingRecord = record.get();</span>
+            
+            // Check if record has expired
+<span class="fc bfc" id="L50" title="All 2 branches covered.">            if (existingRecord.isExpired()) {</span>
+<span class="fc" id="L51">                log.info(&quot;Idempotency record expired for key: {}&quot;, idempotencyKey);</span>
+<span class="fc" id="L52">                return Optional.empty();</span>
+            }
+            
+<span class="fc" id="L55">            log.info(&quot;Found existing idempotency record for key: {}, status: {}&quot;, </span>
+<span class="fc" id="L56">                    idempotencyKey, existingRecord.getStatus());</span>
+        }
+        
+<span class="fc" id="L59">        return record;</span>
+    }
+
+    /**
+     * Create a new idempotency record for a request
+     * 
+     * @param idempotencyKey The idempotency key
+     * @param requestHash Hash of the request for verification
+     * @return The created idempotency record
+     */
+    @Transactional
+    public IdempotencyRecord createIdempotencyRecord(String idempotencyKey, String requestHash) {
+<span class="fc" id="L71">        log.debug(&quot;Creating idempotency record for key: {}&quot;, idempotencyKey);</span>
+
+<span class="fc" id="L73">        IdempotencyRecord record = IdempotencyRecord.builder()</span>
+<span class="fc" id="L74">                .idempotencyKey(idempotencyKey)</span>
+<span class="fc" id="L75">                .requestHash(requestHash)</span>
+<span class="fc" id="L76">                .status(IdempotencyRecord.IdempotencyStatus.PROCESSING)</span>
+<span class="fc" id="L77">                .expiresAt(LocalDateTime.now().plusHours(TTL_HOURS))</span>
+<span class="fc" id="L78">                .build();</span>
+
+<span class="fc" id="L80">        IdempotencyRecord savedRecord = idempotencyRepository.save(record);</span>
+<span class="fc" id="L81">        log.info(&quot;Created idempotency record: {}&quot;, savedRecord.getId());</span>
+        
+<span class="fc" id="L83">        return savedRecord;</span>
+    }
+
+    /**
+     * Update idempotency record with response
+     * 
+     * @param idempotencyKey The idempotency key
+     * @param paymentId The payment ID
+     * @param responseStatus HTTP status code
+     * @param responseBody JSON response body
+     */
+    @Transactional
+    @CacheEvict(value = &quot;idempotency&quot;, key = &quot;#idempotencyKey&quot;)
+    public void completeIdempotencyRecord(String idempotencyKey, String paymentId, 
+                                          int responseStatus, String responseBody) {
+<span class="fc" id="L98">        log.debug(&quot;Completing idempotency record for key: {}&quot;, idempotencyKey);</span>
+
+<span class="fc" id="L100">        idempotencyRepository.findByIdempotencyKey(idempotencyKey)</span>
+<span class="fc" id="L101">                .ifPresent(record -&gt; {</span>
+<span class="fc" id="L102">                    record.complete(paymentId, responseStatus, responseBody);</span>
+<span class="fc" id="L103">                    idempotencyRepository.save(record);</span>
+<span class="fc" id="L104">                    log.info(&quot;Completed idempotency record for key: {}&quot;, idempotencyKey);</span>
+<span class="fc" id="L105">                });</span>
+<span class="fc" id="L106">    }</span>
+
+    /**
+     * Mark idempotency record as failed
+     * 
+     * @param idempotencyKey The idempotency key
+     */
+    @Transactional
+    @CacheEvict(value = &quot;idempotency&quot;, key = &quot;#idempotencyKey&quot;)
+    public void failIdempotencyRecord(String idempotencyKey) {
+<span class="fc" id="L116">        log.debug(&quot;Failing idempotency record for key: {}&quot;, idempotencyKey);</span>
+
+<span class="fc" id="L118">        idempotencyRepository.findByIdempotencyKey(idempotencyKey)</span>
+<span class="fc" id="L119">                .ifPresent(record -&gt; {</span>
+<span class="fc" id="L120">                    record.setStatus(IdempotencyRecord.IdempotencyStatus.FAILED);</span>
+<span class="fc" id="L121">                    idempotencyRepository.save(record);</span>
+<span class="fc" id="L122">                    log.info(&quot;Failed idempotency record for key: {}&quot;, idempotencyKey);</span>
+<span class="fc" id="L123">                });</span>
+<span class="fc" id="L124">    }</span>
+
+    /**
+     * Generate a hash of the request for verification
+     * 
+     * @param requestBody JSON request body
+     * @return SHA-256 hash of the request
+     */
+    public String generateRequestHash(String requestBody) {
+        try {
+<span class="fc" id="L134">            MessageDigest digest = MessageDigest.getInstance(&quot;SHA-256&quot;);</span>
+<span class="fc" id="L135">            byte[] hash = digest.digest(requestBody.getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L136">            return Base64.getEncoder().encodeToString(hash);</span>
+<span class="nc" id="L137">        } catch (NoSuchAlgorithmException e) {</span>
+<span class="nc" id="L138">            log.error(&quot;Failed to generate request hash&quot;, e);</span>
+<span class="nc" id="L139">            return requestBody.hashCode() + &quot;&quot;;</span>
+        }
+    }
+
+    /**
+     * Verify that the current request matches the original request
+     * 
+     * @param record The existing idempotency record
+     * @param currentRequestHash Hash of the current request
+     * @return true if requests match
+     */
+    public boolean verifyRequestMatch(IdempotencyRecord record, String currentRequestHash) {
+<span class="fc bfc" id="L151" title="All 2 branches covered.">        if (record.getRequestHash() == null) {</span>
+<span class="fc" id="L152">            return true; // No hash to compare</span>
+        }
+<span class="fc" id="L154">        return record.getRequestHash().equals(currentRequestHash);</span>
+    }
+
+    /**
+     * Check if there's a conflict (different request with same key)
+     * 
+     * @param idempotencyKey The idempotency key
+     * @param currentRequestHash Hash of the current request
+     * @return true if there's a conflict
+     */
+    public boolean hasConflict(String idempotencyKey, String currentRequestHash) {
+<span class="fc" id="L165">        Optional&lt;IdempotencyRecord&gt; existing = checkIdempotencyKey(idempotencyKey);</span>
+        
+<span class="fc bfc" id="L167" title="All 2 branches covered.">        if (existing.isEmpty()) {</span>
+<span class="fc" id="L168">            return false;</span>
+        }
+        
+<span class="fc bfc" id="L171" title="All 2 branches covered.">        return !verifyRequestMatch(existing.get(), currentRequestHash);</span>
+    }
+
+    /**
+     * Scheduled task to clean up expired idempotency records
+     */
+    @Scheduled(fixedRate = 3600000) // Run every hour
+    @Transactional
+    public void cleanupExpiredRecords() {
+<span class="fc" id="L180">        log.info(&quot;Starting cleanup of expired idempotency records&quot;);</span>
+        
+<span class="fc" id="L182">        LocalDateTime cutoff = LocalDateTime.now();</span>
+<span class="fc" id="L183">        int deleted = idempotencyRepository.deleteExpiredRecords(cutoff);</span>
+        
+<span class="fc" id="L185">        log.info(&quot;Cleaned up {} expired idempotency records&quot;, deleted);</span>
+<span class="fc" id="L186">    }</span>
+
+    /**
+     * Get statistics about idempotency records
+     */
+    public IdempotencyStats getStats() {
+<span class="fc" id="L192">        long processing = idempotencyRepository.countByStatus(IdempotencyRecord.IdempotencyStatus.PROCESSING);</span>
+<span class="fc" id="L193">        long completed = idempotencyRepository.countByStatus(IdempotencyRecord.IdempotencyStatus.COMPLETED);</span>
+<span class="fc" id="L194">        long failed = idempotencyRepository.countByStatus(IdempotencyRecord.IdempotencyStatus.FAILED);</span>
+        
+<span class="fc" id="L196">        return new IdempotencyStats(processing, completed, failed);</span>
+    }
+
+    /**
+     * Record for idempotency statistics
+     */
+<span class="fc" id="L202">    public record IdempotencyStats(long processing, long completed, long failed) {</span>
+        public long total() {
+<span class="fc" id="L204">            return processing + completed + failed;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

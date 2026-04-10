@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IdempotencyRecord.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.entity</a> &gt; <span class="el_source">IdempotencyRecord.java</span></div><h1>IdempotencyRecord.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.LocalDateTime;
+
+/**
+ * Entity to store idempotency records for preventing duplicate payment processing.
+ * Each idempotency key is unique and stores the response for duplicate requests.
+ */
+@Entity
+@Table(name = &quot;idempotency_records&quot;, indexes = {
+    @Index(name = &quot;idx_idempotency_key_unique&quot;, columnList = &quot;idempotencyKey&quot;, unique = true),
+    @Index(name = &quot;idx_idempotency_expires&quot;, columnList = &quot;expiresAt&quot;)
+})
+@Getter
+<span class="pc" id="L19">@Setter</span>
+<span class="fc" id="L20">@NoArgsConstructor</span>
+<span class="fc" id="L21">@AllArgsConstructor</span>
+<span class="pc bpc" id="L22" title="1 of 2 branches missed.">@Builder</span>
+public class IdempotencyRecord {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+<span class="fc" id="L27">    private Long id;</span>
+
+    /**
+     * Unique idempotency key provided by the client
+     */
+    @Column(nullable = false, unique = true, length = 100)
+<span class="fc" id="L33">    private String idempotencyKey;</span>
+
+    /**
+     * Associated payment ID
+     */
+    @Column(length = 50)
+<span class="fc" id="L39">    private String paymentId;</span>
+
+    /**
+     * HTTP status code of the original response
+     */
+<span class="nc" id="L44">    private Integer responseStatus;</span>
+
+    /**
+     * JSON response body to return for duplicate requests
+     */
+    @Column(columnDefinition = &quot;TEXT&quot;)
+<span class="fc" id="L50">    private String responseBody;</span>
+
+    /**
+     * Request hash to verify the request is identical
+     */
+    @Column(length = 64)
+<span class="fc" id="L56">    private String requestHash;</span>
+
+    /**
+     * Status of the idempotency record
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+<span class="fc" id="L64">    private IdempotencyStatus status = IdempotencyStatus.PROCESSING;</span>
+
+    /**
+     * Timestamp when this record was created
+     */
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+<span class="nc" id="L71">    private LocalDateTime createdAt;</span>
+
+    /**
+     * Timestamp when this record expires
+     */
+    @Column(nullable = false)
+<span class="nc" id="L77">    private LocalDateTime expiresAt;</span>
+
+    /**
+     * Pre-persist callback to set expiry time
+     */
+    @PrePersist
+    public void prePersist() {
+<span class="pc bpc" id="L84" title="1 of 2 branches missed.">        if (this.expiresAt == null) {</span>
+<span class="nc" id="L85">            this.expiresAt = LocalDateTime.now().plusHours(24);</span>
+        }
+<span class="fc" id="L87">    }</span>
+
+    /**
+     * Check if this record has expired
+     */
+    public boolean isExpired() {
+<span class="fc" id="L93">        return LocalDateTime.now().isAfter(this.expiresAt);</span>
+    }
+
+    /**
+     * Check if this record is still processing
+     */
+    public boolean isProcessing() {
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">        return this.status == IdempotencyStatus.PROCESSING;</span>
+    }
+
+    /**
+     * Check if this record is completed
+     */
+    public boolean isCompleted() {
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">        return this.status == IdempotencyStatus.COMPLETED;</span>
+    }
+
+    /**
+     * Mark record as completed with response
+     */
+    public void complete(String paymentId, int statusCode, String responseBody) {
+<span class="fc" id="L114">        this.paymentId = paymentId;</span>
+<span class="fc" id="L115">        this.responseStatus = statusCode;</span>
+<span class="fc" id="L116">        this.responseBody = responseBody;</span>
+<span class="fc" id="L117">        this.status = IdempotencyStatus.COMPLETED;</span>
+<span class="fc" id="L118">    }</span>
+
+    /**
+     * Idempotency record status
+     */
+<span class="fc" id="L123">    public enum IdempotencyStatus {</span>
+        /**
+         * Request is currently being processed
+         */
+<span class="fc" id="L127">        PROCESSING,</span>
+        
+        /**
+         * Request has been completed
+         */
+<span class="fc" id="L132">        COMPLETED,</span>
+        
+        /**
+         * Request failed
+         */
+<span class="fc" id="L137">        FAILED</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

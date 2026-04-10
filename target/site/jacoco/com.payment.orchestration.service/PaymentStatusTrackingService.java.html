@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentStatusTrackingService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.service</a> &gt; <span class="el_source">PaymentStatusTrackingService.java</span></div><h1>PaymentStatusTrackingService.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.service;
+
+import com.payment.orchestration.dto.PaymentStatusResponse;
+import com.payment.orchestration.entity.Payment;
+import com.payment.orchestration.entity.PaymentStatusHistory;
+import com.payment.orchestration.enums.PaymentStatus;
+import com.payment.orchestration.enums.ProviderType;
+import com.payment.orchestration.repository.PaymentRepository;
+import com.payment.orchestration.repository.PaymentStatusHistoryRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Service for tracking and managing payment status changes.
+ * Maintains a complete audit trail of all status transitions.
+ */
+<span class="fc" id="L22">@Slf4j</span>
+@Service
+<span class="fc" id="L24">@RequiredArgsConstructor</span>
+public class PaymentStatusTrackingService {
+
+    private final PaymentRepository paymentRepository;
+    private final PaymentStatusHistoryRepository statusHistoryRepository;
+
+    /**
+     * Record a status change for a payment
+     * 
+     * @param payment The payment entity
+     * @param newStatus The new status
+     * @param message Optional message describing the change
+     * @param responseCode Provider response code (if applicable)
+     */
+    @Transactional
+    public void recordStatusChange(Payment payment, PaymentStatus newStatus, 
+                                   String message, String responseCode) {
+<span class="fc" id="L41">        log.debug(&quot;Recording status change for payment {}: {} -&gt; {}&quot;,</span>
+<span class="fc" id="L42">                payment.getPaymentId(), payment.getStatus(), newStatus);</span>
+
+<span class="fc" id="L44">        PaymentStatusHistory history = PaymentStatusHistory.builder()</span>
+<span class="fc" id="L45">                .payment(payment)</span>
+<span class="fc" id="L46">                .status(newStatus)</span>
+<span class="fc" id="L47">                .message(message)</span>
+<span class="fc" id="L48">                .provider(payment.getProvider())</span>
+<span class="fc" id="L49">                .responseCode(responseCode)</span>
+<span class="fc" id="L50">                .retryAttempt(payment.getRetryCount())</span>
+<span class="fc" id="L51">                .build();</span>
+
+<span class="fc" id="L53">        statusHistoryRepository.save(history);</span>
+        
+        // Update payment status
+<span class="fc" id="L56">        payment.setStatus(newStatus);</span>
+        
+        // Mark completed if terminal status
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        if (newStatus.isTerminal()) {</span>
+<span class="fc" id="L60">            payment.markCompleted(newStatus);</span>
+        }
+        
+<span class="fc" id="L63">        paymentRepository.save(payment);</span>
+
+<span class="fc" id="L65">        log.info(&quot;Recorded status change for payment {}: {}&quot;,</span>
+<span class="fc" id="L66">                payment.getPaymentId(), newStatus);</span>
+<span class="fc" id="L67">    }</span>
+
+    /**
+     * Record a retry attempt
+     * 
+     * @param payment The payment being retried
+     * @param attemptNumber The retry attempt number
+     * @param reason Reason for retry
+     */
+    @Transactional
+    public void recordRetryAttempt(Payment payment, int attemptNumber, String reason) {
+<span class="fc" id="L78">        log.debug(&quot;Recording retry attempt {} for payment {}: {}&quot;,</span>
+<span class="fc" id="L79">                attemptNumber, payment.getPaymentId(), reason);</span>
+
+<span class="fc" id="L81">        PaymentStatusHistory history = PaymentStatusHistory.builder()</span>
+<span class="fc" id="L82">                .payment(payment)</span>
+<span class="fc" id="L83">                .status(PaymentStatus.RETRY)</span>
+<span class="fc" id="L84">                .message(&quot;Retry attempt &quot; + attemptNumber + &quot;: &quot; + reason)</span>
+<span class="fc" id="L85">                .provider(payment.getProvider())</span>
+<span class="fc" id="L86">                .retryAttempt(attemptNumber)</span>
+<span class="fc" id="L87">                .build();</span>
+
+<span class="fc" id="L89">        statusHistoryRepository.save(history);</span>
+
+<span class="fc" id="L91">        log.info(&quot;Recorded retry attempt {} for payment {}&quot;,</span>
+<span class="fc" id="L92">                attemptNumber, payment.getPaymentId());</span>
+<span class="fc" id="L93">    }</span>
+
+    /**
+     * Get full status history for a payment
+     * 
+     * @param paymentId The payment ID
+     * @return PaymentStatusResponse with full history
+     */
+    public Optional&lt;PaymentStatusResponse&gt; getPaymentStatus(String paymentId) {
+<span class="fc" id="L102">        log.debug(&quot;Getting status for payment: {}&quot;, paymentId);</span>
+
+<span class="fc" id="L104">        return paymentRepository.findByPaymentIdWithHistory(paymentId)</span>
+<span class="fc" id="L105">                .map(payment -&gt; {</span>
+<span class="fc" id="L106">                    List&lt;PaymentStatusHistory&gt; history = </span>
+<span class="fc" id="L107">                            statusHistoryRepository.findByPaymentPaymentIdOrderByTimestampAsc(paymentId);</span>
+                    
+<span class="fc" id="L109">                    return PaymentStatusResponse.fromPaymentWithHistory(</span>
+<span class="fc" id="L110">                            payment.getPaymentId(),</span>
+<span class="fc" id="L111">                            payment.getStatus(),</span>
+<span class="fc" id="L112">                            payment.getProvider(),</span>
+<span class="fc" id="L113">                            payment.getRetryCount(),</span>
+                            history
+                    );
+                });
+    }
+
+    /**
+     * Get the latest status for a payment
+     * 
+     * @param paymentId The payment ID
+     * @return Latest payment status
+     */
+    public Optional&lt;PaymentStatus&gt; getLatestStatus(String paymentId) {
+<span class="fc" id="L126">        return paymentRepository.findByPaymentId(paymentId)</span>
+<span class="fc" id="L127">                .map(Payment::getStatus);</span>
+    }
+
+    /**
+     * Count retry attempts for a payment
+     * 
+     * @param paymentId The payment ID
+     * @return Number of retry attempts
+     */
+    public long countRetryAttempts(String paymentId) {
+<span class="fc" id="L137">        return statusHistoryRepository.countRetryAttemptsForPayment(paymentId);</span>
+    }
+
+    /**
+     * Record processing started
+     * 
+     * @param payment The payment
+     * @param provider The provider processing the payment
+     */
+    @Transactional
+    public void recordProcessingStarted(Payment payment, ProviderType provider) {
+<span class="fc" id="L148">        payment.setProvider(provider);</span>
+<span class="fc" id="L149">        recordStatusChange(payment, PaymentStatus.PROCESSING,</span>
+<span class="fc" id="L150">                &quot;Processing started with &quot; + provider.getDisplayName(), null);</span>
+<span class="fc" id="L151">    }</span>
+
+    /**
+     * Record successful payment
+     * 
+     * @param payment The payment
+     * @param providerReference Provider reference ID
+     * @param responseCode Provider response code
+     */
+    @Transactional
+    public void recordSuccess(Payment payment, String providerReference, String responseCode) {
+<span class="fc" id="L162">        payment.setProviderReference(providerReference);</span>
+<span class="fc" id="L163">        payment.setProviderResponseCode(responseCode);</span>
+<span class="fc" id="L164">        recordStatusChange(payment, PaymentStatus.SUCCESS,</span>
+                &quot;Payment completed successfully&quot;, responseCode);
+<span class="fc" id="L166">    }</span>
+
+    /**
+     * Record failed payment
+     * 
+     * @param payment The payment
+     * @param errorCode Error code
+     * @param errorMessage Error message
+     */
+    @Transactional
+    public void recordFailure(Payment payment, String errorCode, String errorMessage) {
+<span class="fc" id="L177">        payment.setErrorCode(errorCode);</span>
+<span class="fc" id="L178">        payment.setErrorMessage(errorMessage);</span>
+<span class="fc" id="L179">        recordStatusChange(payment, PaymentStatus.FAILED,</span>
+                &quot;Payment failed: &quot; + errorMessage, errorCode);
+<span class="fc" id="L181">    }</span>
+
+    /**
+     * Get status statistics
+     */
+    public StatusStatistics getStatistics() {
+<span class="fc" id="L187">        long pending = paymentRepository.countByStatus(PaymentStatus.PENDING);</span>
+<span class="fc" id="L188">        long processing = paymentRepository.countByStatus(PaymentStatus.PROCESSING);</span>
+<span class="fc" id="L189">        long success = paymentRepository.countByStatus(PaymentStatus.SUCCESS);</span>
+<span class="fc" id="L190">        long failed = paymentRepository.countByStatus(PaymentStatus.FAILED);</span>
+<span class="fc" id="L191">        long retry = paymentRepository.countByStatus(PaymentStatus.RETRY);</span>
+
+<span class="fc" id="L193">        return new StatusStatistics(pending, processing, success, failed, retry);</span>
+    }
+
+    /**
+     * Record for status statistics
+     */
+<span class="fc" id="L199">    public record StatusStatistics(</span>
+            long pending, 
+            long processing, 
+            long success, 
+            long failed, 
+            long retry
+    ) {
+        public long total() {
+<span class="fc" id="L207">            return pending + processing + success + failed + retry;</span>
+        }
+
+        public double successRate() {
+<span class="fc" id="L211">            long terminal = success + failed;</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">            if (terminal == 0) return 0.0;</span>
+<span class="fc" id="L213">            return (double) success / terminal * 100;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

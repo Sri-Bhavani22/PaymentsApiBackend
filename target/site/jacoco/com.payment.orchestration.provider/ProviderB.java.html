@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProviderB.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.provider</a> &gt; <span class="el_source">ProviderB.java</span></div><h1>ProviderB.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.provider;
+
+import com.payment.orchestration.entity.Payment;
+import com.payment.orchestration.enums.PaymentMethod;
+import com.payment.orchestration.enums.ProviderType;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Provider B implementation - Primary provider for UPI and WALLET payments.
+ * This is a simulated provider for demonstration purposes.
+ * In production, this would integrate with an actual UPI/Wallet payment gateway.
+ */
+<span class="fc" id="L21">@Slf4j</span>
+@Component
+<span class="fc" id="L23">public class ProviderB implements PaymentProvider {</span>
+
+<span class="fc" id="L25">    private static final Set&lt;PaymentMethod&gt; SUPPORTED_METHODS = Set.of(</span>
+            PaymentMethod.UPI,
+            PaymentMethod.WALLET
+    );
+
+    @Value(&quot;${payment.providers.provider-b.timeout-ms:5000}&quot;)
+    private long timeoutMs;
+
+    @Value(&quot;${payment.providers.provider-b.enabled:true}&quot;)
+    private boolean enabled;
+
+    // For simulating random failures and success tracking
+<span class="fc" id="L37">    private final Random random = new Random();</span>
+<span class="fc" id="L38">    private final AtomicInteger totalRequests = new AtomicInteger(0);</span>
+<span class="fc" id="L39">    private final AtomicInteger successfulRequests = new AtomicInteger(0);</span>
+<span class="fc" id="L40">    private final AtomicLong totalProcessingTime = new AtomicLong(0);</span>
+
+    // Simulated failure rate (4% failure rate for demo - slightly better than Provider A)
+    private static final double FAILURE_RATE = 0.04;
+    // Simulated timeout rate (2% timeout rate for demo)
+    private static final double TIMEOUT_RATE = 0.02;
+    // Simulated transient failure rate (3% - these are retryable)
+    private static final double TRANSIENT_FAILURE_RATE = 0.03;
+
+    @Override
+    public ProviderType getProviderType() {
+<span class="fc" id="L51">        return ProviderType.PROVIDER_B;</span>
+    }
+
+    @Override
+    public String getProviderName() {
+<span class="fc" id="L56">        return &quot;Provider B - UPI &amp; Wallet Gateway&quot;;</span>
+    }
+
+    @Override
+    public ProviderResponse processPayment(Payment payment) {
+<span class="fc" id="L61">        long startTime = System.currentTimeMillis();</span>
+<span class="fc" id="L62">        totalRequests.incrementAndGet();</span>
+
+<span class="fc" id="L64">        log.info(&quot;Provider B processing payment: {} for amount: {} {}&quot;,</span>
+<span class="fc" id="L65">                payment.getPaymentId(), payment.getAmount(), payment.getCurrency());</span>
+
+        try {
+            // Simulate processing time (50-300ms - UPI is typically faster)
+<span class="fc" id="L69">            simulateProcessingDelay();</span>
+
+            // Check if provider is enabled
+<span class="fc bfc" id="L72" title="All 2 branches covered.">            if (!enabled) {</span>
+<span class="fc" id="L73">                return ProviderResponse.unavailable(ProviderType.PROVIDER_B);</span>
+            }
+
+            // Simulate various outcomes
+<span class="fc" id="L77">            double outcome = random.nextDouble();</span>
+
+            // Simulate timeout
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">            if (outcome &lt; TIMEOUT_RATE) {</span>
+<span class="nc" id="L81">                log.warn(&quot;Provider B: Simulating timeout for payment: {}&quot;, payment.getPaymentId());</span>
+<span class="nc" id="L82">                return ProviderResponse.timeout(ProviderType.PROVIDER_B);</span>
+            }
+
+            // Simulate transient failure (retryable)
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">            if (outcome &lt; TIMEOUT_RATE + TRANSIENT_FAILURE_RATE) {</span>
+<span class="nc" id="L87">                log.warn(&quot;Provider B: Simulating transient failure for payment: {}&quot;, payment.getPaymentId());</span>
+<span class="nc" id="L88">                return ProviderResponse.retryableFailure(</span>
+                        ProviderType.PROVIDER_B,
+                        &quot;TF002&quot;,
+                        &quot;UPI service temporarily unavailable. Please retry.&quot;,
+                        1500L
+                );
+            }
+
+            // Simulate permanent failure
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">            if (outcome &lt; TIMEOUT_RATE + TRANSIENT_FAILURE_RATE + FAILURE_RATE) {</span>
+<span class="nc" id="L98">                log.warn(&quot;Provider B: Simulating permanent failure for payment: {}&quot;, payment.getPaymentId());</span>
+<span class="nc" id="L99">                return simulateFailure(payment);</span>
+            }
+
+            // Success case
+<span class="fc" id="L103">            String reference = generateProviderReference();</span>
+<span class="fc" id="L104">            successfulRequests.incrementAndGet();</span>
+
+<span class="fc" id="L106">            long processingTime = System.currentTimeMillis() - startTime;</span>
+<span class="fc" id="L107">            totalProcessingTime.addAndGet(processingTime);</span>
+
+<span class="fc" id="L109">            log.info(&quot;Provider B: Payment successful - Reference: {}, Processing time: {}ms&quot;,</span>
+<span class="fc" id="L110">                    reference, processingTime);</span>
+
+<span class="fc" id="L112">            ProviderResponse response = ProviderResponse.success(</span>
+                    ProviderType.PROVIDER_B,
+                    reference,
+                    &quot;Payment processed successfully by Provider B&quot;
+            );
+<span class="fc" id="L117">            response.setProcessingTimeMs(processingTime);</span>
+<span class="fc" id="L118">            return response;</span>
+
+<span class="nc" id="L120">        } catch (Exception e) {</span>
+<span class="nc" id="L121">            log.error(&quot;Provider B: Unexpected error processing payment: {}&quot;, payment.getPaymentId(), e);</span>
+<span class="nc" id="L122">            return ProviderResponse.retryableFailure(</span>
+                    ProviderType.PROVIDER_B,
+                    &quot;ERR002&quot;,
+<span class="nc" id="L125">                    &quot;Unexpected error: &quot; + e.getMessage(),</span>
+                    3000L
+            );
+        }
+    }
+
+    @Override
+    public ProviderResponse checkPaymentStatus(String providerReference) {
+<span class="fc" id="L133">        log.info(&quot;Provider B: Checking status for reference: {}&quot;, providerReference);</span>
+
+        // Simulate status check
+<span class="fc" id="L136">        simulateProcessingDelay();</span>
+
+        // In a real implementation, this would query the provider's API
+<span class="fc" id="L139">        return ProviderResponse.success(</span>
+                ProviderType.PROVIDER_B,
+                providerReference,
+                &quot;Payment found and confirmed&quot;
+        );
+    }
+
+    @Override
+    public ProviderResponse refundPayment(Payment payment) {
+<span class="fc" id="L148">        log.info(&quot;Provider B: Processing refund for payment: {}&quot;, payment.getPaymentId());</span>
+
+<span class="fc" id="L150">        simulateProcessingDelay();</span>
+
+        // Simulate refund (92% success rate - UPI refunds are generally reliable)
+<span class="pc bpc" id="L153" title="1 of 2 branches missed.">        if (random.nextDouble() &lt; 0.08) {</span>
+<span class="nc" id="L154">            return ProviderResponse.failure(</span>
+                    ProviderType.PROVIDER_B,
+                    &quot;REF002&quot;,
+                    &quot;Refund failed - VPA not valid or transaction not found&quot;
+            );
+        }
+
+<span class="fc" id="L161">        String refundReference = &quot;REF_&quot; + generateProviderReference();</span>
+<span class="fc" id="L162">        return ProviderResponse.success(</span>
+                ProviderType.PROVIDER_B,
+                refundReference,
+                &quot;Refund processed successfully via UPI&quot;
+        );
+    }
+
+    @Override
+    public Set&lt;PaymentMethod&gt; getSupportedPaymentMethods() {
+<span class="fc" id="L171">        return SUPPORTED_METHODS;</span>
+    }
+
+    @Override
+    public boolean isHealthy() {
+<span class="pc bpc" id="L176" title="1 of 4 branches missed.">        return enabled &amp;&amp; getSuccessRate() &gt; 0.5;</span>
+    }
+
+    @Override
+    public long getTimeoutMs() {
+<span class="nc" id="L181">        return timeoutMs;</span>
+    }
+
+    @Override
+    public double getSuccessRate() {
+<span class="fc" id="L186">        int total = totalRequests.get();</span>
+<span class="pc bpc" id="L187" title="1 of 2 branches missed.">        if (total == 0) return 1.0;</span>
+<span class="nc" id="L188">        return (double) successfulRequests.get() / total;</span>
+    }
+
+    /**
+     * Get average processing time in milliseconds
+     */
+    public long getAverageProcessingTime() {
+<span class="nc" id="L195">        int total = successfulRequests.get();</span>
+<span class="nc bnc" id="L196" title="All 2 branches missed.">        if (total == 0) return 0;</span>
+<span class="nc" id="L197">        return totalProcessingTime.get() / total;</span>
+    }
+
+    /**
+     * Generate a unique provider reference
+     */
+    private String generateProviderReference() {
+<span class="fc" id="L204">        return &quot;PROV_B_&quot; + UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;).substring(0, 12).toUpperCase();</span>
+    }
+
+    /**
+     * Simulate processing delay (UPI is typically faster)
+     */
+    private void simulateProcessingDelay() {
+        try {
+            // Random delay between 50-300ms
+<span class="fc" id="L213">            Thread.sleep(50 + random.nextInt(250));</span>
+<span class="nc" id="L214">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L215">            Thread.currentThread().interrupt();</span>
+<span class="fc" id="L216">        }</span>
+<span class="fc" id="L217">    }</span>
+
+    /**
+     * Simulate various failure scenarios
+     */
+    private ProviderResponse simulateFailure(Payment payment) {
+        // Simulate different failure types based on payment method
+<span class="nc bnc" id="L224" title="All 2 branches missed.">        if (payment.getPaymentMethod() == PaymentMethod.UPI) {</span>
+            // UPI-specific failures
+<span class="nc" id="L226">            int failureType = random.nextInt(4);</span>
+<span class="nc bnc" id="L227" title="All 4 branches missed.">            return switch (failureType) {</span>
+<span class="nc" id="L228">                case 0 -&gt; ProviderResponse.failure(</span>
+                        ProviderType.PROVIDER_B,
+                        &quot;UPI_INVALID_VPA&quot;,
+                        &quot;Invalid UPI ID / VPA&quot;
+                );
+<span class="nc" id="L233">                case 1 -&gt; ProviderResponse.failure(</span>
+                        ProviderType.PROVIDER_B,
+                        &quot;UPI_DECLINED&quot;,
+                        &quot;Transaction declined by user's bank&quot;
+                );
+<span class="nc" id="L238">                case 2 -&gt; ProviderResponse.failure(</span>
+                        ProviderType.PROVIDER_B,
+                        &quot;UPI_LIMIT_EXCEEDED&quot;,
+                        &quot;Daily transaction limit exceeded&quot;
+                );
+<span class="nc" id="L243">                default -&gt; ProviderResponse.failure(</span>
+                        ProviderType.PROVIDER_B,
+                        &quot;UPI_TIMEOUT&quot;,
+                        &quot;User did not respond to UPI request&quot;
+                );
+            };
+        }
+
+<span class="nc bnc" id="L251" title="All 2 branches missed.">        if (payment.getPaymentMethod() == PaymentMethod.WALLET) {</span>
+            // Wallet-specific failures
+<span class="nc" id="L253">            int failureType = random.nextInt(2);</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">            return switch (failureType) {</span>
+<span class="nc" id="L255">                case 0 -&gt; ProviderResponse.failure(</span>
+                        ProviderType.PROVIDER_B,
+                        &quot;WALLET_INSUFFICIENT&quot;,
+                        &quot;Insufficient wallet balance&quot;
+                );
+<span class="nc" id="L260">                default -&gt; ProviderResponse.failure(</span>
+                        ProviderType.PROVIDER_B,
+                        &quot;WALLET_LOCKED&quot;,
+                        &quot;Wallet account is locked&quot;
+                );
+            };
+        }
+
+        // Generic failure
+<span class="nc" id="L269">        return ProviderResponse.failure(</span>
+                ProviderType.PROVIDER_B,
+                &quot;PROCESSING_ERROR&quot;,
+                &quot;Payment could not be processed&quot;
+        );
+    }
+
+    /**
+     * Reset statistics (useful for testing)
+     */
+    public void resetStatistics() {
+<span class="nc" id="L280">        totalRequests.set(0);</span>
+<span class="nc" id="L281">        successfulRequests.set(0);</span>
+<span class="nc" id="L282">        totalProcessingTime.set(0);</span>
+<span class="nc" id="L283">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

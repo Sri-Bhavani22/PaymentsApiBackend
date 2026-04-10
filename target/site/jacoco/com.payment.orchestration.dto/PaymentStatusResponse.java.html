@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PaymentStatusResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Payment Orchestration System</a> &gt; <a href="index.source.html" class="el_package">com.payment.orchestration.dto</a> &gt; <span class="el_source">PaymentStatusResponse.java</span></div><h1>PaymentStatusResponse.java</h1><pre class="source lang-java linenums">package com.payment.orchestration.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.payment.orchestration.entity.PaymentStatusHistory;
+import com.payment.orchestration.enums.PaymentStatus;
+import com.payment.orchestration.enums.ProviderType;
+import lombok.*;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Response DTO for payment status tracking.
+ * Contains current status and complete status history.
+ */
+<span class="nc bnc" id="L17" title="All 70 branches missed.">@Data</span>
+<span class="nc" id="L18">@NoArgsConstructor</span>
+<span class="fc" id="L19">@AllArgsConstructor</span>
+<span class="pc" id="L20">@Builder</span>
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class PaymentStatusResponse {
+
+    /**
+     * Payment identifier
+     */
+<span class="fc" id="L27">    private String paymentId;</span>
+
+    /**
+     * Current payment status
+     */
+<span class="fc" id="L32">    private PaymentStatus currentStatus;</span>
+
+    /**
+     * Status description
+     */
+<span class="fc" id="L37">    private String statusDescription;</span>
+
+    /**
+     * Provider handling the payment
+     */
+<span class="fc" id="L42">    private ProviderType provider;</span>
+
+    /**
+     * Number of retry attempts
+     */
+<span class="fc" id="L47">    private Integer retryCount;</span>
+
+    /**
+     * Is payment in terminal state
+     */
+<span class="fc" id="L52">    private Boolean isTerminal;</span>
+
+    /**
+     * Complete status history
+     */
+<span class="fc" id="L57">    private List&lt;StatusHistoryEntry&gt; statusHistory;</span>
+
+    /**
+     * Last updated timestamp
+     */
+<span class="fc" id="L62">    private LocalDateTime lastUpdatedAt;</span>
+
+    /**
+     * Inner class for status history entries
+     */
+<span class="nc bnc" id="L67" title="All 54 branches missed.">    @Data</span>
+<span class="nc" id="L68">    @NoArgsConstructor</span>
+<span class="fc" id="L69">    @AllArgsConstructor</span>
+<span class="pc" id="L70">    @Builder</span>
+    public static class StatusHistoryEntry {
+<span class="fc" id="L72">        private PaymentStatus status;</span>
+<span class="fc" id="L73">        private String message;</span>
+<span class="fc" id="L74">        private ProviderType provider;</span>
+<span class="fc" id="L75">        private String responseCode;</span>
+<span class="fc" id="L76">        private Integer retryAttempt;</span>
+<span class="fc" id="L77">        private LocalDateTime timestamp;</span>
+
+        public static StatusHistoryEntry fromEntity(PaymentStatusHistory history) {
+<span class="fc" id="L80">            return StatusHistoryEntry.builder()</span>
+<span class="fc" id="L81">                    .status(history.getStatus())</span>
+<span class="fc" id="L82">                    .message(history.getMessage())</span>
+<span class="fc" id="L83">                    .provider(history.getProvider())</span>
+<span class="fc" id="L84">                    .responseCode(history.getResponseCode())</span>
+<span class="fc" id="L85">                    .retryAttempt(history.getRetryAttempt())</span>
+<span class="fc" id="L86">                    .timestamp(history.getTimestamp())</span>
+<span class="fc" id="L87">                    .build();</span>
+        }
+    }
+
+    /**
+     * Build response from payment entity with status history
+     */
+    public static PaymentStatusResponse fromPaymentWithHistory(
+            String paymentId,
+            PaymentStatus currentStatus,
+            ProviderType provider,
+            Integer retryCount,
+            List&lt;PaymentStatusHistory&gt; history) {
+        
+<span class="fc" id="L101">        List&lt;StatusHistoryEntry&gt; historyEntries = history.stream()</span>
+<span class="fc" id="L102">                .map(StatusHistoryEntry::fromEntity)</span>
+<span class="fc" id="L103">                .collect(Collectors.toList());</span>
+
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">        LocalDateTime lastUpdated = historyEntries.isEmpty() ? null :</span>
+<span class="fc" id="L106">                historyEntries.get(historyEntries.size() - 1).getTimestamp();</span>
+
+<span class="fc" id="L108">        return PaymentStatusResponse.builder()</span>
+<span class="fc" id="L109">                .paymentId(paymentId)</span>
+<span class="fc" id="L110">                .currentStatus(currentStatus)</span>
+<span class="fc" id="L111">                .statusDescription(currentStatus.getDescription())</span>
+<span class="fc" id="L112">                .provider(provider)</span>
+<span class="fc" id="L113">                .retryCount(retryCount)</span>
+<span class="fc" id="L114">                .isTerminal(currentStatus.isTerminal())</span>
+<span class="fc" id="L115">                .statusHistory(historyEntries)</span>
+<span class="fc" id="L116">                .lastUpdatedAt(lastUpdated)</span>
+<span class="fc" id="L117">                .build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>
