@@ -1,0 +1,104 @@
+name: PR Automation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  # ── 1. Auto-assign reviewers based on changed paths ──────────────
+  auto-assign-reviewers:
+    name: Auto Assign Reviewers
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assign reviewers by path
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+
+            const reviewers = new Set();
+            files.forEach(f => {
+              if (f.filename.startsWith('src/main/java/com/payment')) reviewers.add('backend-reviewer');
+              if (f.filename.includes('pom.xml'))                     reviewers.add('devops-reviewer');
+            });
+
+            if (reviewers.size > 0) {
+              await github.rest.pulls.requestReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                reviewers: [...reviewers],
+              });
+              console.log('Reviewers assigned:', [...reviewers]);
+            }
+
+  # ── 2. Validate PR title follows Conventional Commits ────────────
+  validate-pr-title:
+    name: Validate PR Title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title format
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const pattern = /^(feat|fix|docs|style|refactor|test|chore|ci|perf)(\(.+\))?: .{1,72}$/;
+            if (!pattern.test(title)) {
+              core.setFailed(
+                `PR title "${title}" does not follow Conventional Commits.\n` +
+                `Expected format: feat(scope): description\n` +
+                `Types: feat | fix | docs | style | refactor | test | chore | ci | perf`
+              );
+            }
+
+  # ── 3. Build & Test ───────────────────────────────────────────────
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run tests
+        run: mvn verify --no-transfer-progress
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: target/surefire-reports/
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+
+  # ── 4. Auto-close stale PRs (no activity for 30 days) ────────────
+  stale-prs:
+    name: Close Stale PRs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/stale@v9
+        with:
+          stale-pr-message: "This PR has been inactive for 30 days and will be closed in 7 days."
+          close-pr-message: "Closed due to inactivity. Re-open if still relevant."
+          days-before-pr-stale: 30
+          days-before-pr-close: 7
+          stale-pr-label: "stale"
